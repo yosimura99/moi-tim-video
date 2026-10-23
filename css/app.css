@@ -486,6 +486,16 @@ code {
   background: var(--bg);
   border: 1px solid var(--line);
 }
+details.advanced {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+details.advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+details.advanced .lede { margin-bottom: 12px; }
 .dialog-foot {
   display: flex;
   flex-wrap: wrap;

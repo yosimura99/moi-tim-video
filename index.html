@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mới — video mới nhất từ Google</title>
-  <meta name="description" content="Tìm video mới nhất theo từ khóa hoặc địa chỉ trang web. Nguồn chính là Google Search, bổ sung từ YouTube.">
+  <title>Mới — video mới nhất</title>
+  <meta name="description" content="Tìm video mới nhất theo từ khóa hoặc địa chỉ trang web. Từ khóa lấy trên YouTube. Trang web được đọc trực tiếp, không cần mã cx.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -65,51 +65,50 @@
 
   <dialog id="settings" aria-labelledby="settingsTitle">
     <div class="dialog-body">
-      <h2 id="settingsTitle">Cài đặt khóa Google</h2>
-      <p class="lede">Google Search là nguồn chính cho cả từ khóa và địa chỉ trang web. YouTube Data API bổ sung video YouTube, thời lượng và giờ đăng. Khóa chỉ nằm trong trình duyệt này.</p>
-
-      <label class="field" for="googleApiKey">
-        <span>Khóa API Google</span>
-        <span class="secret">
-          <input id="googleApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
-          <button type="button" class="ctrl" data-toggle-secret="googleApiKey">Hiện</button>
-        </span>
-        <small>Tạo trong Google Cloud Console. Nên bật Custom Search API và YouTube Data API v3 cho cùng một khóa.</small>
-      </label>
-
-      <label class="field" for="searchEngineId">
-        <span>Mã công cụ tìm kiếm (cx)</span>
-        <input id="searchEngineId" type="text" autocomplete="off" spellcheck="false" placeholder="Search engine ID">
-        <small>Lấy ở Programmable Search Engine. Phải bật Search the entire web thì mới tìm được khắp web.</small>
-      </label>
-
-      <label class="field check">
-        <input id="shareGoogleKey" type="checkbox" checked>
-        <span>Dùng khóa Google cho YouTube <small>Khóa ở trên phải được phép gọi YouTube Data API v3.</small></span>
-      </label>
+      <h2 id="settingsTitle">Cài đặt</h2>
+      <p class="lede">Từ khóa tìm video YouTube mới nhất. Địa chỉ một trang web thì Mới tự đọc RSS và video nhúng trên trang đó. Không cần mã cx. Khóa, nếu có, chỉ nằm trong trình duyệt này.</p>
 
       <label class="field" id="youtubeField" for="youtubeApiKey">
-        <span>Khóa YouTube riêng</span>
+        <span>Khóa YouTube Data API</span>
         <span class="secret">
-          <input id="youtubeApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Chỉ điền nếu không dùng chung khóa">
+          <input id="youtubeApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza… để trống cũng tìm được">
           <button type="button" class="ctrl" data-toggle-secret="youtubeApiKey">Hiện</button>
         </span>
-        <small>Bỏ chọn ô phía trên nếu bạn muốn một khóa chỉ dành cho YouTube.</small>
+        <small>Không bắt buộc. Có khóa thì từ khóa ổn định hơn và có giờ đăng chính xác. Để trống thì từ khóa đi qua nguồn mở, còn trang báo thì không cần khóa.</small>
       </label>
 
       <div id="checkResult" class="check-log" aria-live="polite"></div>
 
-      <h3>Lấy khóa và mã cx</h3>
+      <h3>Lấy khóa YouTube</h3>
       <ol class="steps">
         <li>Mở <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> và tạo một dự án, hoặc chọn dự án có sẵn.</li>
-        <li>Vào <strong>APIs &amp; Services → Library</strong>. Bật <strong>Custom Search API</strong> và <strong>YouTube Data API v3</strong>. Đợi vài phút cho API có hiệu lực.</li>
+        <li>Vào <strong>APIs &amp; Services → Library</strong>. Bật <strong>YouTube Data API v3</strong>. Đợi vài phút.</li>
         <li>Vào <strong>APIs &amp; Services → Credentials → Create credentials → API key</strong>. Sao chép khóa.</li>
-        <li>Nên hạn chế khóa: <strong>Application restrictions → HTTP referrers</strong>. Thêm <code>http://localhost/*</code>, <code>http://127.0.0.1/*</code> và địa chỉ Pages, ví dụ <code>https://ten-ban.github.io/*</code>. Ở <strong>API restrictions</strong>, chỉ chọn Custom Search API và YouTube Data API v3.</li>
-        <li>Mở <a href="https://programmablesearchengine.google.com/controlpanel/create" target="_blank" rel="noopener noreferrer">Programmable Search Engine</a>. Khi được hỏi tìm ở đâu, chọn <strong>Search the entire web</strong>. Tạo xong, sao chép <strong>Search engine ID</strong> — đó là mã cx.</li>
-        <li>Dán khóa và cx vào form, bấm <strong>Kiểm tra khóa</strong>. Khi Google và YouTube đều báo dùng được, bấm <strong>Lưu</strong>.</li>
+        <li>Nên hạn chế khóa: <strong>Application restrictions → HTTP referrers</strong>. Thêm <code>http://127.0.0.1/*</code> và địa chỉ Pages, ví dụ <code>https://ten-ban.github.io/*</code>. Ở <strong>API restrictions</strong>, chỉ chọn YouTube Data API v3.</li>
+        <li>Dán khóa vào ô phía trên, bấm <strong>Kiểm tra khóa</strong>, rồi <strong>Lưu</strong>.</li>
       </ol>
-      <p class="callout">Mỗi lượt tìm có thể tốn 1–2 truy vấn Custom Search (mức miễn phí khoảng 100 lần/ngày) và một lần tìm YouTube (100 đơn vị; hạn mức mặc định khoảng 10.000 đơn vị/ngày). Tự làm mới cũng tốn hạn mức. Khóa không được đưa vào Git. Ai mở trang này đều phải tự dán khóa của họ.</p>
-      <p class="lede">Chưa có khóa? Một liên kết video YouTube (<code>watch</code>, <code>youtu.be</code>, <code>shorts</code>) vẫn hiện được tên và ảnh. Kênh, playlist và từ khóa cần khóa — YouTube không cho trang tĩnh đọc RSS.</p>
+      <p class="callout">Mỗi lượt tìm từ khóa bằng khóa này tốn khoảng 100 đơn vị YouTube (hạn mức mặc định khoảng 10.000 đơn vị/ngày). Tự làm mới cũng tốn hạn mức. Khóa không được đưa vào Git.</p>
+      <p class="lede">Chưa có khóa? Gõ từ khóa vẫn ra video. Dán <code>vnexpress.net/video</code> hoặc <code>tuoitre.vn/video.htm</code> để xem video mới trên báo. Một liên kết YouTube (<code>watch</code>, <code>youtu.be</code>, <code>shorts</code>) vẫn hiện tên và ảnh. Kênh và playlist thì cần khóa.</p>
+
+      <details class="advanced">
+        <summary>Custom Search không còn dùng</summary>
+        <p class="lede">Dự án Google mới bị lỗi 403 “This project does not have the access to Custom Search JSON API”, và công cụ tìm mới không tìm được cả web. Mới không hỏi mã cx. Ô dưới chỉ giữ khóa cũ: nếu khóa YouTube đang trống và ô dùng chung được chọn, khóa cũ sẽ được gọi như khóa YouTube.</p>
+        <label class="field" for="googleApiKey">
+          <span>Khóa API cũ</span>
+          <span class="secret">
+            <input id="googleApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Không cần cho tìm kiếm">
+            <button type="button" class="ctrl" data-toggle-secret="googleApiKey">Hiện</button>
+          </span>
+        </label>
+        <label class="field" for="searchEngineId">
+          <span>Mã cx (bỏ qua)</span>
+          <input id="searchEngineId" type="text" autocomplete="off" spellcheck="false" placeholder="Không dùng">
+        </label>
+        <label class="field check">
+          <input id="shareGoogleKey" type="checkbox">
+          <span>Nếu chưa có khóa YouTube, dùng khóa cũ ở trên <small>Chỉ khi khóa đó được phép gọi YouTube Data API v3.</small></span>
+        </label>
+      </details>
     </div>
     <div class="dialog-foot">
       <button type="button" class="text-btn" id="clearKeys">Xóa khóa đã lưu</button>
@@ -118,7 +117,7 @@
       <button type="button" class="ctrl" id="closeSettings">Đóng</button>
     </div>
   </dialog>
-  <noscript><p class="page">Mới cần JavaScript để hỏi Google và hiện video.</p></noscript>
+  <noscript><p class="page">Mới cần JavaScript để tìm và phát video.</p></noscript>
   <script src="js/logic.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>

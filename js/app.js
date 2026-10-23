@@ -31,6 +31,75 @@
   var input = document.getElementById("q");
   var suggest = document.getElementById("suggest");
   var dialog = document.getElementById("settings");
+  var activeHls = null;
+  var hlsLoader = null;
+
+  function stopPlayer() {
+    if (activeHls) {
+      try { activeHls.destroy(); } catch (error) {}
+      activeHls = null;
+    }
+  }
+
+  function loadHls() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    if (hlsLoader) return hlsLoader;
+    hlsLoader = new Promise(function (resolve, reject) {
+      var script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js";
+      script.onload = function () { window.Hls ? resolve(window.Hls) : reject(new Error("hls")); };
+      script.onerror = function () { reject(new Error("hls")); };
+      document.head.appendChild(script);
+    });
+    return hlsLoader;
+  }
+
+  function proxyLoader(Hls) {
+    var Base = Hls.DefaultConfig.loader;
+    function Loader(config) {
+      this.inner = new Base(config);
+      this.stats = this.inner.stats;
+      this.context = null;
+    }
+    Loader.prototype.load = function (context, config, callbacks) {
+      var original = context && context.url;
+      var target = original;
+      if (typeof original === "string" && /^https?:\/\//i.test(original) && original.indexOf("https://proxy.corsfix.com/?") !== 0) {
+        target = "https://proxy.corsfix.com/?" + original;
+      }
+      var wrapped = {
+        onSuccess: function (response, stats, ctx, network) {
+          if (response && original) response.url = original;
+          callbacks.onSuccess(response, stats, context, network);
+        },
+        onError: function (error, ctx, network, stats) {
+          callbacks.onError(error, context, network, stats);
+        },
+        onTimeout: function (stats, ctx, network) {
+          callbacks.onTimeout(stats, context, network);
+        },
+      };
+      this.context = context;
+      this.stats = this.inner.stats || this.stats;
+      return this.inner.load(Object.assign({}, context, { url: target }), config, wrapped);
+    };
+    Loader.prototype.abort = function () { return this.inner.abort(); };
+    Loader.prototype.destroy = function () { if (this.inner.destroy) this.inner.destroy(); };
+    return Loader;
+  }
+
+  function hlsHeaders(url) {
+    var target = url || "";
+    var prefix = "https://proxy.corsfix.com/?";
+    if (target.indexOf(prefix) === 0) target = target.slice(prefix.length);
+    var host = "";
+    try { host = new URL(target).hostname; } catch (error) {}
+    if (!/(^|\.)vnecdn\.net$|(^|\.)vnexpress\.net$/i.test(host)) return;
+    return JSON.stringify({
+      Origin: "https://video.vnexpress.net",
+      Referer: "https://video.vnexpress.net/",
+    });
+  }
 
   function h(tag, props) {
     var el = document.createElement(tag);
@@ -132,11 +201,9 @@
   }
 
   function paintKeyState() {
-    var ready = MoiLogic.readiness(settings);
     var button = document.getElementById("openSettings");
-    var missing = !ready.google && !ready.youtube;
-    button.classList.toggle("needs-key", missing);
-    button.setAttribute("aria-label", missing ? "Cài đặt, chưa có khóa API" : "Cài đặt");
+    button.classList.remove("needs-key");
+    button.setAttribute("aria-label", "Cài đặt");
   }
 
   function parseRoute() {
@@ -167,9 +234,17 @@
 
   function sourceText(used) {
     var parts = [];
-    if (used && used.google) parts.push("Google");
-    if (used && (used.youtube || used.oembed)) parts.push("YouTube");
+    if (used && used.youtube) parts.push("YouTube");
+    else if (used && used.oembed) parts.push("YouTube");
+    else if (used && used.piped) parts.push("YouTube, nguồn mở");
+    if (used && used.site) parts.push("trang web");
     return parts.length ? "Nguồn: " + parts.join(", ") : "";
+  }
+
+  function sourceHref(video) {
+    if (video.pageUrl) return video.pageUrl;
+    if (video.url && !/\.(m3u8|mp4|webm|ogg)(\?|#|$)/i.test(video.url)) return video.url;
+    return video.authorUrl || video.url;
   }
 
   function restartTimer() {
@@ -225,7 +300,7 @@
   }
 
   function avatar(video) {
-    var domain = MoiLogic.domainOf(video.url);
+    var domain = MoiLogic.domainOf(video.pageUrl || video.authorUrl || video.url);
     var letter = (video.author || "?").trim().charAt(0).toUpperCase() || "?";
     var wrap = h("span", { class: "avatar", "aria-hidden": "true" });
     if (domain) {
@@ -312,7 +387,7 @@
           { value: "300", label: "Tự làm mới: 5 phút" },
           { value: "900", label: "Tự làm mới: 15 phút" },
         ]),
-        h("button", { type: "button", class: "ctrl", "data-action": "refresh", title: "Mỗi lần làm mới gọi lại Google và tốn hạn mức" }, "Làm mới")
+        h("button", { type: "button", class: "ctrl", "data-action": "refresh", title: "Tải lại kết quả" }, "Làm mới")
       )
     );
   }
@@ -336,34 +411,26 @@
   }
 
   function renderLoading() {
-    main.replaceChildren(h("p", { class: "loading-note" }, "Đang hỏi Google…"), skeletonGrid());
-    setStatus("Đang hỏi Google…");
+    main.replaceChildren(h("p", { class: "loading-note" }, "Đang tìm video mới…"), skeletonGrid());
+    setStatus("Đang tìm video mới…");
     document.title = "Đang tìm · Mới";
   }
 
   function renderIdle() {
     var ready = MoiLogic.readiness(settings);
     var intro = h("section", { class: "intro" },
-      h("h1", {}, "Video mới, từ Google."),
-      h("p", {}, "Gõ một từ khóa hoặc dán địa chỉ trang web. Mới hỏi Google Search trước, lấy thêm video YouTube, rồi xếp video mới đăng lên trên cùng."),
+      h("h1", {}, "Video mới nhất."),
+      h("p", {}, "Gõ một từ khóa hoặc dán địa chỉ trang web. Từ khóa lấy video YouTube mới đăng. Địa chỉ trang thì Mới đọc RSS và video nhúng, rồi xếp video mới lên trên."),
       h("p", { class: "hint" }, "Nhấn / để nhảy tới ô tìm.")
     );
     var parts = [intro];
-    if (!ready.google && !ready.youtube) {
-      parts.push(h("section", { class: "setup" },
-        h("h2", {}, "Thêm khóa để bắt đầu tìm"),
-        h("p", {}, "Khóa chỉ lưu trong trình duyệt này, không đưa vào mã nguồn. Google Programmable Search là nguồn chính. YouTube là nguồn bổ sung."),
-        h("button", { type: "button", class: "primary", "data-action": "settings" }, "Mở cài đặt")
-      ));
-    } else if (!ready.google) {
-      parts.push(h("p", { class: "banner" }, "Chưa có Google Programmable Search. Tìm từ khóa vẫn lấy được video YouTube. Tìm theo trang web khác cần thêm khóa Google và mã cx."));
-    } else if (!ready.youtube) {
-      parts.push(h("p", { class: "banner" }, "Chưa có khóa YouTube. Kết quả Google vẫn hiện. Thêm YouTube Data API nếu bạn muốn giờ đăng và thời lượng chính xác hơn."));
+    if (!ready.youtube) {
+      parts.push(h("p", { class: "banner" }, "Chưa có khóa YouTube. Từ khóa vẫn tìm được qua nguồn mở. Trang báo, ví dụ vnexpress.net/video, không cần khóa. Thêm khóa trong Cài đặt nếu muốn kết quả từ khóa ổn định hơn."));
     }
     var box = h("section", { class: "recent" }, h("h2", {}, "Tìm gần đây"));
     if (!recent.length) {
       var chips = h("div", { class: "chips" });
-      ["bản tin thời sự", "nhạc mới phát hành", "youtube.com/@YouTube"].forEach(function (query) {
+      ["bản tin thời sự", "https://vnexpress.net/video", "https://tuoitre.vn/video.htm", "nhạc mới phát hành"].forEach(function (query) {
         chips.append(h("button", { type: "button", class: "chip", title: query, "data-action": "use-query", "data-query": query }, query));
       });
       box.append(h("p", { class: "muted" }, "Chưa có lần tìm nào."), h("h3", {}, "Gợi ý"), chips);
@@ -376,7 +443,7 @@
     }
     parts.push(box);
     main.replaceChildren.apply(main, parts);
-    document.title = "Mới — video mới nhất từ Google";
+    document.title = "Mới — video mới nhất";
     setStatus("");
   }
 
@@ -384,7 +451,7 @@
     var code = state.error && state.error.code;
     var keyish = ["MISSING_KEY", "INVALID_KEY", "NOT_ENABLED", "QUOTA", "FORBIDDEN"].indexOf(code) !== -1;
     var box = h("div", { class: "notice" },
-      h("h1", {}, state.error ? state.error.message : "Có lỗi khi hỏi Google."),
+      h("h1", {}, state.error ? state.error.message : "Có lỗi khi tìm video."),
       h("div", { class: "row" },
         state.query ? h("button", { type: "button", class: "ctrl", "data-action": "retry" }, "Thử lại") : null,
         keyish ? h("button", { type: "button", class: "primary", "data-action": "settings" }, "Mở cài đặt") : null
@@ -425,6 +492,46 @@
       videoEl.setAttribute("playsinline", "");
       videoEl.src = embed.src;
       player.append(videoEl);
+    } else if (embed.type === "hls") {
+      var stream = h("video", { controls: true, autoplay: true });
+      stream.setAttribute("playsinline", "");
+      var note = h("p", { class: "banner", hidden: true });
+      player.append(stream, note);
+      loadHls().then(function (Hls) {
+        if (!player.isConnected) return;
+        if (Hls.isSupported()) {
+          stopPlayer();
+          var hls = new Hls({
+            enableWorker: false,
+            startLevel: 0,
+            loader: proxyLoader(Hls),
+            xhrSetup: function (xhr, mediaUrl) {
+              var header = hlsHeaders(mediaUrl);
+              if (header) xhr.setRequestHeader("x-corsfix-headers", header);
+            },
+          });
+          activeHls = hls;
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            hls.currentLevel = 0;
+          });
+          hls.on(Hls.Events.ERROR, function (event, data) {
+            if (!data || !data.fatal) return;
+            note.hidden = false;
+            note.dataset.hls = (data.type || "") + " " + (data.details || "") + " " + ((data.error && data.error.message) || "");
+            note.textContent = "Không phát được luồng này trong trang. Mở trên trang nguồn để xem.";
+          });
+          hls.loadSource(embed.src);
+          hls.attachMedia(stream);
+        } else if (stream.canPlayType("application/vnd.apple.mpegurl")) {
+          stream.src = embed.src;
+        } else {
+          note.hidden = false;
+          note.textContent = "Trình duyệt này không phát được luồng HLS. Mở trên trang nguồn để xem.";
+        }
+      }).catch(function () {
+        note.hidden = false;
+        note.textContent = "Không tải được trình phát. Mở trên trang nguồn để xem.";
+      });
     } else {
       var link = h("a", {
         class: "external",
@@ -467,7 +574,7 @@
       h("h1", {}, video.title),
       metaRow(video),
       h("div", { class: "watch-actions" },
-        h("a", { class: "ctrl linkish", href: video.url, target: "_blank", rel: "noopener noreferrer" }, "Mở trên trang nguồn")
+        h("a", { class: "ctrl linkish", href: sourceHref(video), target: "_blank", rel: "noopener noreferrer" }, "Mở trên trang nguồn")
       )
     );
     if (video.description) {
@@ -493,6 +600,7 @@
   }
 
   function renderMain() {
+    stopPlayer();
     var route = parseRoute();
     if (route.name === "watch") {
       if (state.phase === "loading") renderLoading();
@@ -659,10 +767,10 @@
   }
 
   function syncShare() {
-    var share = document.getElementById("shareGoogleKey").checked;
     var field = document.getElementById("youtubeField");
-    document.getElementById("youtubeApiKey").disabled = share;
-    field.classList.toggle("is-disabled", share);
+    var inputKey = document.getElementById("youtubeApiKey");
+    if (inputKey) inputKey.disabled = false;
+    if (field) field.classList.remove("is-disabled");
   }
 
   function fillSettings() {
@@ -699,12 +807,7 @@
     readSettingsForm();
     saveSettings();
     paintKeyState();
-    var ready = MoiLogic.readiness(settings);
-    var extra = "";
-    if ((settings.googleApiKey || settings.searchEngineId) && !ready.google) {
-      extra = " Google Search cần cả khóa API và mã cx.";
-    }
-    showToast("Đã lưu cài đặt trên trình duyệt này." + extra);
+    showToast("Đã lưu cài đặt trên trình duyệt này.");
     if (state.phase === "idle") renderMain();
   }
 
@@ -718,10 +821,7 @@
     button.disabled = true;
     try {
       var report = await MoiApi.checkKeys(settings);
-      box.replaceChildren(
-        h("div", {}, "Google: " + report.google.message),
-        h("div", {}, "YouTube: " + report.youtube.message)
-      );
+      box.replaceChildren(h("div", {}, "YouTube: " + report.youtube.message));
     } catch (error) {
       box.textContent = MoiLogic.messages.network;
     } finally {

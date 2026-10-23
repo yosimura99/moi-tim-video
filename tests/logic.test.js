@@ -179,6 +179,9 @@ test("embed uses the YouTube player, not the watch page", () => {
   assert.equal(page.type, "external");
   const file = Logic.buildEmbed({ url: "https://cdn.example.com/a.mp4" }, "localhost");
   assert.equal(file.type, "file");
+  const hls = Logic.buildEmbed({ url: "https://cdn.example.com/master.m3u8" }, "localhost");
+  assert.equal(hls.type, "hls");
+  assert.match(hls.src, /master\.m3u8$/);
 });
 
 test("maps Google errors to Vietnamese messages", () => {
@@ -209,4 +212,26 @@ test("publishedAfter and shared keys", () => {
   assert.equal(ready.googleApiKey, "abc");
   assert.equal(ready.youtube, true);
   assert.equal(ready.youtubeApiKey, "abc");
+  const own = Logic.readiness({ googleApiKey: "abc", youtubeApiKey: "yt", shareGoogleKey: true });
+  assert.equal(own.youtubeApiKey, "yt");
+});
+
+test("reads RSS and embedded streams, newest page first", () => {
+  const rss = `<rss><channel><title>V</title><item><title><![CDATA[Một clip]]></title><link>https://tuoitre.vn/video/a.htm</link><pubDate>10/23/2026 3:30:00 PM</pubDate><media:content url="https://cdn.example.com/a.mp4" type="video/mp4" duration="15"/><media:thumbnail>https://cdn.example.com/a.jpg</media:thumbnail></item></channel></rss>`;
+  const videos = Logic.extractPageVideos(rss, "https://tuoitre.vn/rss/video.rss");
+  assert.equal(videos.length, 1);
+  assert.equal(videos[0].title, "Một clip");
+  assert.equal(videos[0].url, "https://cdn.example.com/a.mp4");
+  assert.ok(videos[0].publishedAt);
+
+  const html = `<html><a href="https://www.youtube.com/watch?v=abcdefghijk" title="YouTube nhúng">x</a>
+    <script type="application/ld+json">{"@type":"VideoObject","name":"JSON clip","contentUrl":"https://cdn.example.com/b.mp4","uploadDate":"2026-10-21"}</script></html>`;
+  const embedded = Logic.extractPageVideos(html, "https://example.com/v");
+  assert.equal(embedded.find((video) => video.youtubeId === "abcdefghijk").title, "YouTube nhúng");
+  assert.equal(embedded.find((video) => video.url.indexOf("b.mp4") !== -1).title, "JSON clip");
+
+  const seeds = Logic.seedUrls(Logic.classifyQuery("https://vnexpress.net/video"));
+  assert.equal(seeds[0], "https://video.vnexpress.net/");
+  const tuoi = Logic.seedUrls(Logic.classifyQuery("https://tuoitre.vn/video.htm"));
+  assert.equal(tuoi[0], "https://tuoitre.vn/rss/video.rss");
 });

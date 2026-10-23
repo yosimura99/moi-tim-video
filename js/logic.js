@@ -14,35 +14,36 @@
   const messages = {
     emptyQuery: "Hãy nhập từ khóa hoặc địa chỉ trang web.",
     missingKey:
-      "Chưa có khóa API. Mở Cài đặt, dán khóa Google Programmable Search và mã công cụ tìm kiếm (cx). Khóa chỉ lưu trên trình duyệt này.",
-    missingGoogleForSite:
-      "Tìm video theo địa chỉ trang web cần khóa Google Programmable Search và mã cx. YouTube Data API không thay được nguồn này.",
+      "Chưa có khóa YouTube và nguồn mở cũng không trả về video. Mở Cài đặt, dán khóa YouTube Data API. Không cần mã cx. Khóa chỉ lưu trên trình duyệt này.",
     missingYoutubeChannel:
       "Cần khóa YouTube Data API để đọc kênh hoặc playlist. YouTube không cho trang tĩnh đọc RSS. Hãy dán khóa trong Cài đặt. Liên kết một video (watch, youtu.be, shorts) vẫn hiện được tên và ảnh.",
     invalidKey:
-      "Khóa API không hợp lệ. Tạo lại khóa trong Google Cloud Console và dán khóa mới vào Cài đặt.",
+      "Khóa API không hợp lệ. Tạo lại khóa YouTube Data API trong Google Cloud Console và dán khóa mới vào Cài đặt.",
     quota:
-      "Đã vượt hạn mức (quota) của Google cho hôm nay. Programmable Search miễn phí khoảng 100 lần tìm mỗi ngày; mỗi lượt tìm trên YouTube cũng tốn hạn mức. Đợi hạn mức làm mới, hoặc kiểm tra quota trong Cloud Console.",
-    network: "Không kết nối được tới Google. Kiểm tra mạng rồi thử lại.",
-    timeout: "Google phản hồi quá chậm. Thử lại sau ít phút.",
+      "Đã vượt hạn mức YouTube Data API hôm nay. Mỗi lượt tìm từ khóa tốn khoảng 100 đơn vị (mặc định khoảng 10.000 đơn vị/ngày). Đợi hạn mức làm mới, hoặc tìm tiếp bằng nguồn mở.",
+    network: "Không kết nối được. Kiểm tra mạng rồi thử lại.",
+    timeout: "Máy chủ phản hồi quá chậm. Thử lại sau ít phút.",
     forbidden:
-      "Khóa API bị từ chối. Kiểm tra hạn chế HTTP referrer và danh sách API được phép trong Cloud Console (Custom Search API và YouTube Data API v3).",
-    badRequest:
-      "Google từ chối yêu cầu. Kiểm tra mã công cụ tìm kiếm (cx). Nếu công cụ chưa hỗ trợ sắp theo ngày, ứng dụng sẽ tự thử lại.",
+      "Khóa YouTube bị từ chối. Kiểm tra hạn chế HTTP referrer và bật YouTube Data API v3 cho khóa này.",
+    badRequest: "YouTube từ chối yêu cầu. Kiểm tra lại từ khóa hoặc địa chỉ.",
     notEnabledGoogle:
-      "Chưa bật Custom Search API cho dự án Google Cloud. Vào APIs & Services → Library, bật “Custom Search API”, đợi vài phút rồi thử lại.",
+      "Custom Search API không dùng được với dự án Google mới. Mới không cần mã cx.",
     notEnabledYoutube:
       "Chưa bật YouTube Data API v3. Vào APIs & Services → Library, tìm “YouTube Data API v3” và bấm Enable.",
     noChannel: "Không tìm thấy kênh YouTube này. Kiểm tra lại địa chỉ.",
     noVideo: "Không tìm thấy video YouTube này.",
     noUploads: "Kênh này không có danh sách video đã đăng.",
-    upstream: "Google trả về lỗi. Thử lại sau.",
+    upstream: "Nguồn video trả về lỗi. Thử lại sau.",
     oembedFail: "Không lấy được video này khi chưa có khóa API.",
+    siteUnreadable:
+      "Không đọc được trang này từ trình duyệt. Trang có thể chặn truy cập, hoặc không có RSS, video nhúng hay tệp video.",
+    pipedDown:
+      "Nguồn mở tạm thời không trả video. Thêm khóa YouTube Data API trong Cài đặt để tìm từ khóa ổn định hơn.",
   };
 
   function noResultsMessage(query) {
     const q = String(query || "").trim();
-    return `Không thấy video nào cho “${q}”. Thử từ khóa khác, chọn “Mọi lúc”, hoặc kiểm tra công cụ tìm kiếm đã bật Search the entire web.`;
+    return `Không thấy video nào cho “${q}”. Thử từ khóa khác, chọn “Mọi lúc”, hoặc dán đúng trang video của báo.`;
   }
 
   function cleanSecret(value) {
@@ -57,7 +58,8 @@
     const googleApiKey = cleanSecret(s.googleApiKey);
     const searchEngineId = cleanSecret(s.searchEngineId);
     const share = s.shareGoogleKey !== false;
-    const youtubeApiKey = share ? googleApiKey : cleanSecret(s.youtubeApiKey);
+    const ownYoutubeKey = cleanSecret(s.youtubeApiKey);
+    const youtubeApiKey = ownYoutubeKey || (share ? googleApiKey : "");
     return {
       googleApiKey,
       searchEngineId,
@@ -93,7 +95,9 @@
   function parseDate(value) {
     if (!value) return null;
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
-    const raw = String(value).trim();
+    const raw = String(value)
+      .trim()
+      .replace(/\u202f|\u00a0/g, " ");
     if (!raw) return null;
     let time = Date.parse(raw);
     if (Number.isNaN(time) && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(raw)) {
@@ -443,8 +447,9 @@ function domainOf(value) {
       title: cleanTitle(fields.title).slice(0, 180),
       description: stripHtml(fields.description || "").slice(0, 800),
       url: url,
+      pageUrl: safeHttpUrl(fields.pageUrl || ""),
       thumbnail: safeHttpUrl(fields.thumbnail) || youtubeThumb(youtubeId),
-      author: stripHtml(fields.author || "") || domainOf(url) || "Không rõ nguồn",
+      author: stripHtml(fields.author || "") || domainOf(fields.pageUrl || url) || "Không rõ nguồn",
       authorUrl: safeHttpUrl(fields.authorUrl || ""),
       publishedAt: parseDate(fields.publishedAt),
       durationSec: parseIsoDuration(fields.duration),
@@ -452,8 +457,8 @@ function domainOf(value) {
       badge: fields.badge || "",
       embeddable: fields.embeddable !== false,
       source: source,
-      via: fields.via || (source === "youtube" || source === "oembed" ? "YouTube" : "Google"),
-      sourceLabel: fields.sourceLabel || (youtubeId ? "YouTube" : domainOf(url)),
+      via: fields.via || (source === "youtube" || source === "oembed" || source === "piped" ? "YouTube" : source === "site" ? siteName(domainOf(fields.pageUrl || url)) : "Google"),
+      sourceLabel: fields.sourceLabel || (youtubeId ? "YouTube" : siteName(domainOf(fields.pageUrl || url))),
     };
   }
 
@@ -576,8 +581,9 @@ function videoFromItem(item) {
 
 function viaOf(video) {
   if (!video) return "";
-  if (video.source === "youtube" || video.source === "oembed") return "YouTube";
-  return "Google";
+  if (video.source === "youtube" || video.source === "oembed" || video.source === "piped") return "YouTube";
+  if (video.source === "site") return video.via || video.sourceLabel || siteName(domainOf(video.pageUrl || video.url));
+  return video.via || "Google";
 }
 
   function mergeRecords(a, b) {
@@ -608,8 +614,9 @@ function viaOf(video) {
       badge: primary.badge || secondary.badge || "",
       embeddable: primary.embeddable !== false && secondary.embeddable !== false,
       source: primary.source,
-      via: primary.source === "youtube" || secondary.source === "youtube" ? "YouTube" : viaOf(primary),
+      via: primary.source === "youtube" || secondary.source === "youtube" || primary.source === "piped" || secondary.source === "piped" ? "YouTube" : viaOf(primary),
       sourceLabel: primary.sourceLabel || secondary.sourceLabel,
+      pageUrl: primary.pageUrl || secondary.pageUrl || "",
     });
   }
 
@@ -711,8 +718,19 @@ function viaOf(video) {
     if (tiktok) {
       return { type: "iframe", src: "https://www.tiktok.com/embed/v2/" + tiktok[1], ratio: "9 / 16", narrow: true };
     }
+    if (/\.m3u8(\?|#|$)/i.test(url) && safeHttpUrl(url)) {
+      return { type: "hls", src: safeHttpUrl(url), ratio: "16 / 9", narrow: false };
+    }
     if (/\.(mp4|webm|ogg)(\?|#|$)/i.test(url) && safeHttpUrl(url)) {
       return { type: "file", src: safeHttpUrl(url), ratio: "16 / 9", narrow: false };
+    }
+    if (/facebook\.com\/(?:.+\/videos\/|watch)|fb\.watch\//i.test(url) && safeHttpUrl(url)) {
+      return {
+        type: "iframe",
+        src: "https://www.facebook.com/plugins/video.php?href=" + encodeURIComponent(safeHttpUrl(url)) + "&show_text=false&autoplay=true",
+        ratio: "16 / 9",
+        narrow: false,
+      };
     }
     return { type: "external", src: safeHttpUrl(url), ratio: "16 / 9", narrow: false };
   }
@@ -807,6 +825,366 @@ function viaOf(video) {
     });
   }
 
+  function siteName(host) {
+    const names = {
+      "vnexpress.net": "VnExpress",
+      "video.vnexpress.net": "VnExpress",
+      "tuoitre.vn": "Tuổi Trẻ",
+      "thanhnien.vn": "Thanh Niên",
+      "vietnamnet.vn": "VietnamNet",
+      "vtv.vn": "VTV",
+      "dantri.com.vn": "Dân trí",
+      "youtube.com": "YouTube",
+      "vimeo.com": "Vimeo",
+      "dailymotion.com": "Dailymotion",
+      "tiktok.com": "TikTok",
+      "facebook.com": "Facebook",
+    };
+    const bare = bareHost(host);
+    return names[bare] || bare || "Trang web";
+  }
+
+  function decodeEntities(value) {
+    return String(value || "")
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1")
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+        const code = parseInt(hex, 16);
+        return Number.isFinite(code) ? String.fromCharCode(code) : _;
+      })
+      .replace(/&#(\d+);/g, (_, num) => {
+        const code = Number(num);
+        return Number.isFinite(code) ? String.fromCharCode(code) : _;
+      })
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">");
+  }
+
+  function isDirectMedia(url) {
+    return /\.(mp4|webm|ogg|m3u8)(\?|#|$)/i.test(String(url || ""));
+  }
+
+  function isKnownPlayer(url) {
+    const value = String(url || "");
+    if (youtubeIdFromUrl(value)) return true;
+    if (/vimeo\.com\/(?:video\/)?\d+/i.test(value)) return true;
+    if (/dailymotion\.com\/video\/[A-Za-z0-9]+/i.test(value) || /dai\.ly\/[A-Za-z0-9]+/i.test(value)) return true;
+    if (/tiktok\.com\/@[^/]+\/video\/\d+/i.test(value)) return true;
+    if (/twitch\.tv\/videos\/\d+/i.test(value)) return true;
+    if (/facebook\.com\/(?:.+\/videos\/|watch)|fb\.watch\//i.test(value)) return true;
+    return false;
+  }
+
+  function isPlayableUrl(url) {
+    return isDirectMedia(url) || isKnownPlayer(url);
+  }
+
+  function titleFromSlug(url) {
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      let last = parts[parts.length - 1] || parsed.hostname;
+      try {
+        last = decodeURIComponent(last);
+      } catch (e) {}
+      last = last.replace(/\.(mp4|webm|ogg|m3u8|html?)$/i, "");
+      last = last.replace(/[-_]+/g, " ").replace(/\d{6,}/g, " ").replace(/\s+/g, " ").trim();
+      if (last.length < 8) return siteName(parsed.hostname) + " video";
+      return last.charAt(0).toUpperCase() + last.slice(1);
+    } catch (e) {
+      return "Video";
+    }
+  }
+
+  function dateFromMediaUrl(url) {
+    const text = String(url || "");
+    const stamp = text.match(/(?:^|[^0-9])(\d{10})(?![0-9])/);
+    if (stamp) {
+      const ms = Number(stamp[1]) * 1000;
+      if (ms > Date.UTC(2018, 0, 1) && ms < Date.UTC(2032, 0, 1)) return new Date(ms).toISOString();
+    }
+    const day = text.match(/\/(20\d{2})\/(\d{2})\/(\d{2})\//);
+    if (!day) return null;
+    return new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]))).toISOString();
+  }
+
+  function tagText(xml, tag) {
+    const re = new RegExp("<" + tag + "\\b[^>]*>([\\s\\S]*?)</" + tag + ">", "i");
+    const match = String(xml || "").match(re);
+    if (!match) return "";
+    return stripHtml(decodeEntities(match[1])).trim();
+  }
+
+  function tagAttr(xml, tag, name) {
+    const re = new RegExp("<" + tag + "\\b([^>]*)\\/?>", "i");
+    const match = String(xml || "").match(re);
+    if (!match) return "";
+    const attr = match[1].match(new RegExp(name + "\\s*=\\s*([\"'])([\\s\\S]*?)\\1", "i"));
+    return attr ? decodeEntities(attr[2]).trim() : "";
+  }
+
+  function nearestTitle(windowText) {
+    const patterns = [
+      /title\s*=\s*"([^"]{4,180})"/i,
+      /title\s*:\s*"([^"]{4,180})"/,
+      /<h[1-3][^>]*>\s*([^<]{4,180}?)\s*<\/h[1-3]>/i,
+      /alt\s*=\s*"([^"]{4,180})"/i,
+    ];
+    for (let i = 0; i < patterns.length; i++) {
+      const match = windowText.match(patterns[i]);
+      if (!match) continue;
+      const title = stripHtml(match[1]).trim();
+      if (title && !/^(play|video|ảnh|image|null)$/i.test(title)) return title;
+    }
+    return "";
+  }
+
+  function nearestThumb(windowText) {
+    const match = String(windowText || "").match(/https?:\/\/[^"'\\\s>]+\.(?:jpe?g|png|webp)(?:\?[^"'\\\s>]*)?/i);
+    return match ? match[0] : "";
+  }
+
+  function nearestArticle(windowText, base) {
+    const preferred = String(windowText || "").match(/https?:\/\/video\.vnexpress\.net\/[^"'\\\s>]+\.html/i);
+    if (preferred) return absoluteUrl(preferred[0], base);
+    const href = String(windowText || "").match(/href\s*=\s*"([^"]+\.s?html?)"/i);
+    if (href) return absoluteUrl(decodeEntities(href[1]), base);
+    return "";
+  }
+
+  function pushVideo(list, seen, fields) {
+    const pageUrl = fields.pageUrl || "";
+    const video = makeVideo(Object.assign({
+      source: "site",
+      author: siteName(domainOf(pageUrl || fields.url)),
+      sourceLabel: siteName(domainOf(pageUrl || fields.url)),
+      via: siteName(domainOf(pageUrl || fields.url)),
+    }, fields));
+    if (!video || seen.has(video.id)) return;
+    seen.add(video.id);
+    list.push(video);
+  }
+
+  function extractRssVideos(xml, pageUrl) {
+    const chunks = String(xml || "").split(/<item\b/i).slice(1);
+    const videos = [];
+    const seen = new Set();
+    chunks.forEach((chunk) => {
+      const title = tagText(chunk, "title");
+      const link = tagText(chunk, "link") || tagAttr(chunk, "link", "href");
+      const publishedAt = tagText(chunk, "pubDate") || tagText(chunk, "dc:date") || tagText(chunk, "updated") || tagText(chunk, "published");
+      const mediaUrl = tagAttr(chunk, "media:content", "url") || tagAttr(chunk, "enclosure", "url");
+      const mediaType = (tagAttr(chunk, "media:content", "type") || tagAttr(chunk, "enclosure", "type") || "").toLowerCase();
+      const thumb = tagAttr(chunk, "media:thumbnail", "url") || tagText(chunk, "media:thumbnail") || tagAttr(chunk, "media:content", "url");
+      const duration = tagAttr(chunk, "media:content", "duration") || tagText(chunk, "itunes:duration");
+      const description = tagText(chunk, "description");
+      const mediaIsVideo = mediaUrl && (mediaType.indexOf("video") !== -1 || mediaType.indexOf("mpegurl") !== -1 || isPlayableUrl(mediaUrl));
+      const play = mediaIsVideo ? mediaUrl : isPlayableUrl(link) ? link : "";
+      if (!play) return;
+      const image = thumb && !isDirectMedia(thumb) ? thumb : "";
+      pushVideo(videos, seen, {
+        title: title || titleFromSlug(play),
+        description: description,
+        url: absoluteUrl(play, pageUrl) || play,
+        pageUrl: safeHttpUrl(link) && !isDirectMedia(link) ? link : pageUrl,
+        thumbnail: image,
+        publishedAt: publishedAt || dateFromMediaUrl(play),
+        duration: duration,
+      });
+    });
+    return videos;
+  }
+
+  function extractHtmlVideos(html, pageUrl) {
+    const text = decodeEntities(html).replace(/\\\//g, "/");
+    const videos = [];
+    const seen = new Set();
+    let match;
+    const ldRe = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+    while ((match = ldRe.exec(text))) {
+      let data = null;
+      try {
+        data = JSON.parse(match[1]);
+      } catch (e) {
+        data = null;
+      }
+      const nodes = Array.isArray(data) ? data : data ? [data] : [];
+      nodes.forEach((node) => {
+        const list = node && node["@graph"] ? [].concat(node, node["@graph"]) : [node];
+        list.forEach((item) => {
+          if (!item || String(item["@type"] || "").toLowerCase().indexOf("video") === -1) return;
+          const content = item.contentUrl || item.embedUrl || item.url;
+          if (!content) return;
+          pushVideo(videos, seen, {
+            title: item.name || item.headline,
+            description: item.description,
+            url: absoluteUrl(content, pageUrl),
+            pageUrl: absoluteUrl(item.mainEntityOfPage || pageUrl, pageUrl),
+            thumbnail: absoluteUrl(typeof item.thumbnailUrl === "string" ? item.thumbnailUrl : (item.thumbnailUrl && item.thumbnailUrl[0]) || "", pageUrl),
+            publishedAt: item.uploadDate || item.datePublished,
+            duration: item.duration,
+            author: typeof item.author === "string" ? item.author : item.author && item.author.name,
+          });
+        });
+      });
+    }
+    text.split(/<article\b/i).slice(1).forEach((part) => {
+      const chunk = part.slice(0, 5000);
+      const media = chunk.match(/https?:[^"'\\\s]+?master\.m3u8/i);
+      if (!media) return;
+      const title = chunk.match(/\btitle\s*=\s*"([^"]{4,180})"/i);
+      const href = chunk.match(/href\s*=\s*"(https?:[^"]+?\.s?html?)"/i);
+      const duration = chunk.match(/"dr"\s*:\s*(\d+)/) || chunk.match(/\bdr\s*:\s*(\d+)/);
+      pushVideo(videos, seen, {
+        title: title ? title[1] : titleFromSlug(media[0]),
+        url: media[0],
+        pageUrl: href ? href[1] : pageUrl,
+        thumbnail: nearestThumb(chunk),
+        publishedAt: dateFromMediaUrl(media[0]),
+        duration: duration ? Number(duration[1]) : null,
+      });
+    });
+    const objectRe = /\{[^{}]{0,1400}"m3u8"\s*:\s*"(https?:[^"]+\.m3u8)"[^{}]{0,900}\}/g;
+    while ((match = objectRe.exec(text))) {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(match[0]);
+      } catch (e) {
+        parsed = null;
+      }
+      const media = (parsed && parsed.m3u8) || match[1];
+      const after = text.slice(match.index, match.index + match[0].length + 700);
+      const windowText = text.slice(Math.max(0, match.index - 250), match.index + match[0].length + 700);
+      pushVideo(videos, seen, {
+        title: (parsed && parsed.title) || nearestTitle(after) || titleFromSlug(media),
+        url: media,
+        pageUrl: nearestArticle(after, pageUrl) || nearestArticle(windowText, pageUrl) || pageUrl,
+        thumbnail: nearestThumb(windowText),
+        publishedAt: dateFromMediaUrl(media),
+        duration: parsed && parsed.dr,
+        description: parsed && parsed.lead,
+      });
+    }
+    const quoted = /m3u8\s*:\s*'(https?:[^']+\.m3u8)'/g;
+    while ((match = quoted.exec(text))) {
+      const after = text.slice(match.index, match.index + 650);
+      const before = text.slice(Math.max(0, match.index - 500), match.index);
+      const title = after.match(/title\s*:\s*"([^"]+)"/) || after.match(/\btitle\s*=\s*"([^"]{4,180})"/i);
+      const page = before.match(/page_url\s*=\s*'([^']+)'/) || after.match(/page_url\s*=\s*'([^']+)'/);
+      const thumb = before.match(/vThumbUrl\s*=\s*'([^']+)'/) || after.match(/vThumbUrl\s*=\s*'([^']+)'/);
+      const duration = after.match(/\bdr\s*:\s*(\d+)/) || before.match(/\bdr\s*:\s*(\d+)/);
+      pushVideo(videos, seen, {
+        title: title ? title[1] : nearestTitle(after) || titleFromSlug(match[1]),
+        url: match[1],
+        pageUrl: page ? page[1] : nearestArticle(after, pageUrl) || pageUrl,
+        thumbnail: thumb ? thumb[1] : nearestThumb(after),
+        publishedAt: dateFromMediaUrl(match[1]),
+        duration: duration ? Number(duration[1]) : null,
+      });
+    }
+    const mediaRe = /https?:\/\/[^\s"'<>\\]+?\.(?:mp4|webm|ogg|m3u8)(?:\?[^\s"'<>\\]*)?/gi;
+    while ((match = mediaRe.exec(text))) {
+      const media = match[0];
+      if (/\/(?:ads?|qc|banner|pixel)\//i.test(media)) continue;
+      const windowText = text.slice(Math.max(0, match.index - 500), match.index + 400);
+      pushVideo(videos, seen, {
+        title: nearestTitle(windowText) || titleFromSlug(media),
+        url: media,
+        pageUrl: nearestArticle(windowText, pageUrl) || pageUrl,
+        thumbnail: nearestThumb(windowText),
+        publishedAt: dateFromMediaUrl(media),
+      });
+    }
+    const hrefRe = /(?:src|href)\s*=\s*"([^"]+)"/gi;
+    while ((match = hrefRe.exec(text))) {
+      const href = absoluteUrl(decodeEntities(match[1]), pageUrl);
+      if (!href || !isKnownPlayer(href)) continue;
+      const windowText = text.slice(Math.max(0, match.index - 300), match.index + 240);
+      pushVideo(videos, seen, {
+        title: nearestTitle(windowText) || titleFromSlug(href),
+        url: href,
+        pageUrl: pageUrl,
+      });
+    }
+    return videos;
+  }
+
+  function extractPageVideos(text, pageUrl) {
+    const raw = String(text || "");
+    if (/<(rss|feed|item)\b/i.test(raw) && /<title\b/i.test(raw)) {
+      const fromRss = extractRssVideos(raw, pageUrl);
+      if (fromRss.length) return fromRss;
+    }
+    return extractHtmlVideos(raw, pageUrl);
+  }
+
+  function discoverFeeds(html, base) {
+    const out = [];
+    const tags = String(html || "").match(/<link\b[^>]*>/gi) || [];
+    tags.forEach((tag) => {
+      if (!/alternate/i.test(tag) || !/rss|atom|xml/i.test(tag)) return;
+      const href = tag.match(/href\s*=\s*["']([^"']+)["']/i);
+      if (!href) return;
+      const abs = absoluteUrl(decodeEntities(href[1]), base);
+      if (abs && out.indexOf(abs) === -1) out.push(abs);
+    });
+    return out;
+  }
+
+  function seedUrls(spec) {
+    const out = [];
+    const push = (value) => {
+      const safe = safeHttpUrl(value);
+      if (!safe || out.indexOf(safe) !== -1) return;
+      out.push(safe);
+    };
+    if (!spec || !spec.url) return out;
+    let url;
+    try {
+      url = new URL(spec.url);
+    } catch (e) {
+      return out;
+    }
+    const host = bareHost(url.hostname);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    const videoish = /video/i.test(path) || host.indexOf("video.") === 0;
+    if (host === "tuoitre.vn" && videoish) push("https://tuoitre.vn/rss/video.rss");
+    if (host === "thanhnien.vn" && videoish) push("https://thanhnien.vn/video/rss.html");
+    if (host === "vnexpress.net" || host === "video.vnexpress.net") {
+      if (videoish || path === "/" || host === "video.vnexpress.net") push("https://video.vnexpress.net/");
+    }
+    if (host === "vtv.vn" && videoish) push("https://vtv.vn/video.htm");
+    push(url.href);
+    if (videoish) push(url.origin + "/rss/video.rss");
+    if (out.length < 4) push(url.origin + "/feed");
+    return out.slice(0, 4);
+  }
+
+  function videoFromAddress(url) {
+    const safe = safeHttpUrl(url);
+    if (!safe || !isPlayableUrl(safe)) return null;
+    return makeVideo({
+      title: titleFromSlug(safe),
+      url: safe,
+      pageUrl: isDirectMedia(safe) ? "" : safe,
+      publishedAt: dateFromMediaUrl(safe),
+      source: "site",
+      author: siteName(domainOf(safe)),
+      sourceLabel: siteName(domainOf(safe)),
+      via: siteName(domainOf(safe)),
+    });
+  }
+
+  function applyDateRestrict(videos, dateRestrict, now) {
+    const after = publishedAfter(dateRestrict, now);
+    if (!after) return videos || [];
+    const min = Date.parse(after);
+    return (videos || []).filter((video) => video && video.publishedAt && Date.parse(video.publishedAt) >= min);
+  }
+
   function fromPlaylistItem(item) {
     const snippet = (item && item.snippet) || {};
     const id = (item && item.contentDetails && item.contentDetails.videoId) || (snippet.resourceId && snippet.resourceId.videoId);
@@ -851,6 +1229,15 @@ return {
     mergeRecords: mergeRecords,
     filterGoogleForTarget: filterGoogleForTarget,
     buildEmbed: buildEmbed,
+    siteName: siteName,
+    isPlayableUrl: isPlayableUrl,
+    titleFromSlug: titleFromSlug,
+    dateFromMediaUrl: dateFromMediaUrl,
+    extractPageVideos: extractPageVideos,
+    discoverFeeds: discoverFeeds,
+    seedUrls: seedUrls,
+    videoFromAddress: videoFromAddress,
+    applyDateRestrict: applyDateRestrict,
     mapHttpError: mapHttpError,
     fromYouTubeResource: fromYouTubeResource,
     fromSearchItem: fromSearchItem,

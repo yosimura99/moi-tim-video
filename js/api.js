@@ -4,7 +4,8 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.MoiApi = api;
 })(typeof self !== "undefined" ? self : this, function (Logic) {
-  const LABELS = { google: "Google", youtube: "YouTube", oembed: "YouTube" };
+  const LABELS = { google: "Google", youtube: "YouTube", oembed: "YouTube", site: "Trang web", piped: "YouTube" };
+  const PIPED_HOSTS = ["https://api.piped.private.coffee", "https://pipedapi.ducks.party"];
 
   function withSource(error, source) {
     if (error && typeof error === "object") error.source = error.source || source;
@@ -241,36 +242,133 @@
     return { videos: [], token: null, playlistId: null, channel: null };
   }
 
-  async function searchGoogle(ready, spec, options, fetchImpl) {
-    const plan = Logic.googleQueryPlan(spec);
-    const start = (options.page && options.page.googleStart) || 1;
-    const common = {
-      dateRestrict: options.dateRestrict || "",
-      lr: options.lang === "vi" ? "lang_vi" : "",
-      num: 10,
-      sort: "date",
-    };
-    const primary = await cseListSafe(
-      ready,
-      Object.assign({}, common, plan.primary, { start: start }),
-      fetchImpl
-    );
-    let videos = Logic.extractVideos(primary.items);
-    const warnings = [];
-    const firstPage = !options.page || !options.page.googleStart || options.page.googleStart <= 1;
-    if (firstPage && plan.supplement && videos.length < 4) {
+  function usableDocument(text) {
+    const value = String(text || "").trim();
+    if (value.length < 80) return false;
+    if (/^(406|403|401)\b/.test(value) && value.length < 240) return false;
+    if (/not acceptable/i.test(value) && value.length < 240) return false;
+    if (/<title>\s*40\d/i.test(value) && value.length < 800) return false;
+    return true;
+  }
+
+  async function getText(url, fetchImpl, source, headers) {
+    let response;
+    try {
+      const init = { headers: headers || { accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" } };
+      if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+        init.signal = AbortSignal.timeout(25000);
+      }
+      response = await fetchImpl(String(url), init);
+    } catch (error) {
+      if (error && error.name === "TimeoutError") throw new Logic.ApiError("NETWORK", Logic.messages.timeout, source);
+      throw new Logic.ApiError("NETWORK", Logic.messages.network, source);
+    }
+    let text = "";
+    try {
+      text = await response.text();
+    } catch (error) {
+      text = "";
+    }
+    if (!response.ok) throw new Logic.ApiError("UPSTREAM", Logic.messages.siteUnreadable, source);
+    return text || "";
+  }
+
+  async function readDocument(pageUrl, fetchImpl) {
+    try {
+      const direct = await getText(pageUrl, fetchImpl, "site");
+      if (usableDocument(direct)) return direct;
+    } catch (error) {}
+    const via = await getText("https://r.jina.ai/" + pageUrl, fetchImpl, "site", {
+      accept: "text/plain",
+      "x-return-format": "html",
+    });
+    if (!usableDocument(via)) throw new Logic.ApiError("UPSTREAM", Logic.messages.siteUnreadable, "site");
+    return via;
+  }
+
+  async function searchSite(spec, options, fetchImpl) {
+    const seeds = Logic.seedUrls(spec).slice(0, 4);
+    let videos = [];
+    const bare = Logic.videoFromAddress(spec.url);
+    if (bare) videos.push(bare);
+    let reads = 0;
+    let failures = 0;
+    for (let i = 0; i < seeds.length; i++) {
+      const before = videos.length;
+      let text = "";
       try {
-        const extra = await cseListSafe(ready, Object.assign({}, common, plan.supplement, { start: 1 }), fetchImpl);
-        videos = videos.concat(Logic.extractVideos(extra.items));
+        text = await readDocument(seeds[i], fetchImpl);
+        reads += 1;
       } catch (error) {
-        warnings.push(error.message || Logic.messages.upstream);
+        failures += 1;
+        continue;
+      }
+      videos = videos.concat(Logic.extractPageVideos(text, seeds[i]));
+      const feeds = videos.length > before ? [] : Logic.discoverFeeds(text, seeds[i]).slice(0, 2);
+      for (let f = 0; f < feeds.length; f++) {
+        if (seeds.indexOf(feeds[f]) !== -1) continue;
+        try {
+          const rss = await readDocument(feeds[f], fetchImpl);
+          reads += 1;
+          videos = videos.concat(Logic.extractPageVideos(rss, feeds[f]));
+        } catch (error) {
+          failures += 1;
+        }
+      }
+      if (videos.length > before) break;
+    }
+    videos = Logic.applyDateRestrict(Logic.sortVideos(Logic.dedupeVideos(videos)), options.dateRestrict);
+    videos = videos.slice(0, 24);
+    if (!videos.length) {
+      if (!reads) throw new Logic.ApiError("NETWORK", Logic.messages.siteUnreadable, "site");
+      throw new Logic.ApiError("NO_RESULTS", Logic.noResultsMessage(spec.raw), "site");
+    }
+    const warnings = [];
+    if (failures && reads) warnings.push("Đã đọc được video, nhưng một vài địa chỉ của trang không mở được.");
+    return { videos: videos, warnings: warnings };
+  }
+
+  function fromPiped(item) {
+    if (!item || (item.type && item.type !== "stream")) return null;
+    const watch = item.url && String(item.url).indexOf("http") === 0 ? item.url : "https://www.youtube.com" + (item.url || "");
+    const youtubeId = Logic.youtubeIdFromUrl(watch) || ((String(item.url || "").match(/[A-Za-z0-9_-]{11}/) || [])[0] || "");
+    if (!youtubeId) return null;
+    let publishedAt = null;
+    const uploaded = Number(item.uploaded);
+    if (Number.isFinite(uploaded) && uploaded > 0) {
+      const ms = uploaded < 1e12 ? uploaded * 1000 : uploaded;
+      publishedAt = new Date(ms).toISOString();
+    }
+    return Logic.makeVideo({
+      youtubeId: youtubeId,
+      title: item.title,
+      description: item.shortDescription || "",
+      thumbnail: "https://i.ytimg.com/vi/" + youtubeId + "/hqdefault.jpg",
+      author: item.uploaderName,
+      publishedAt: publishedAt,
+      duration: item.duration,
+      views: item.views,
+      source: "piped",
+      via: "YouTube",
+      sourceLabel: "YouTube",
+    });
+  }
+
+  async function searchPiped(query, options, fetchImpl) {
+    let last = null;
+    for (let i = 0; i < PIPED_HOSTS.length; i++) {
+      try {
+        const url = PIPED_HOSTS[i] + "/search?filter=videos&q=" + encodeURIComponent(query);
+        const body = await getJson(url, fetchImpl, "piped");
+        const items = Array.isArray(body) ? body : body.items || [];
+        let videos = items.map(fromPiped).filter(Boolean);
+        videos = Logic.applyDateRestrict(Logic.sortVideos(Logic.dedupeVideos(videos)), options.dateRestrict).slice(0, 24);
+        if (videos.length) return { videos: videos };
+      } catch (error) {
+        last = error;
       }
     }
-    return {
-      videos: videos,
-      nextStart: primary.items.length ? primary.nextStart : null,
-      warnings: warnings,
-    };
+    throw last || new Logic.ApiError("UPSTREAM", Logic.messages.pipedDown, "piped");
   }
 
   async function searchOEmbed(spec, fetchImpl) {
@@ -301,12 +399,12 @@
   }
 
   function missingMessage(spec, ready) {
-    if (spec.kind === "site" && !ready.google) return { code: "MISSING_KEY", message: Logic.messages.missingGoogleForSite };
-    if (!ready.google && !ready.youtube && spec.kind === "youtube-video") return null;
-    if (!ready.google && !ready.youtube && (spec.kind === "youtube-channel" || spec.kind === "youtube-playlist")) {
+    if (spec.kind === "site" || spec.kind === "keyword") return null;
+    if (!ready.youtube && spec.kind === "youtube-video") return null;
+    if (!ready.youtube && (spec.kind === "youtube-channel" || spec.kind === "youtube-playlist")) {
       return { code: "MISSING_KEY", message: Logic.messages.missingYoutubeChannel };
     }
-    if (!ready.google && !ready.youtube) return { code: "MISSING_KEY", message: Logic.messages.missingKey };
+    if (!ready.youtube) return { code: "MISSING_KEY", message: Logic.messages.missingKey };
     return null;
   }
 
@@ -315,7 +413,7 @@
     const fetchImpl = opts.fetch || (typeof fetch === "function" ? fetch : null);
     const spec = Logic.classifyQuery(rawQuery);
     const ready = Logic.readiness(settings);
-    const used = { google: false, youtube: false, oembed: false };
+    const used = { google: false, youtube: false, oembed: false, site: false, piped: false };
     const emptyPage = { googleStart: null, youtubeToken: null, playlistId: null, playlistToken: null };
     if (!spec.raw) {
       return { spec: spec, videos: [], warnings: [], used: used, page: emptyPage, error: { code: "EMPTY", message: Logic.messages.emptyQuery } };
@@ -335,27 +433,38 @@
     if (blocked && !isMore) {
       return { spec: spec, videos: [], warnings: [], used: used, page: emptyPage, error: blocked };
     }
-    if (spec.kind === "site" && !ready.google) {
-      return {
-        spec: spec,
-        videos: [],
-        warnings: [],
-        used: used,
-        page: emptyPage,
-        error: { code: "MISSING_KEY", message: Logic.messages.missingGoogleForSite },
-      };
+    if (spec.kind === "site" && !isMore) {
+      try {
+        const found = await searchSite(spec, opts, fetchImpl);
+        used.site = true;
+        return {
+          spec: spec,
+          videos: found.videos,
+          warnings: found.warnings || [],
+          used: used,
+          page: emptyPage,
+          error: null,
+        };
+      } catch (error) {
+        const failure = withSource(error, "site");
+        return {
+          spec: spec,
+          videos: [],
+          warnings: [],
+          used: used,
+          page: emptyPage,
+          error: { code: failure.code || "UPSTREAM", message: failure.message || Logic.messages.siteUnreadable },
+        };
+      }
     }
 
     const jobs = [];
-    const runGoogle = !opts.page || opts.page.googleStart;
     const runYoutube = Logic.wantsYouTubeApi(spec) && ready.youtube && (!opts.page || opts.page.youtubeToken || opts.page.playlistToken || !opts.page);
-    if (ready.google && (!isMore || runGoogle)) {
-      if (!isMore || opts.page.googleStart) {
-        jobs.push({ source: "google", run: () => searchGoogle(ready, spec, opts, fetchImpl) });
-      }
-    }
     if (runYoutube && (!isMore || (opts.page && (opts.page.youtubeToken || opts.page.playlistToken)))) {
       jobs.push({ source: "youtube", run: () => searchYouTube(ready, spec, opts, fetchImpl) });
+    }
+    if (!isMore && spec.kind === "keyword" && !ready.youtube) {
+      jobs.push({ source: "piped", run: () => searchPiped(spec.query, opts, fetchImpl) });
     }
     if (!isMore && !ready.youtube && spec.kind === "youtube-video") {
       jobs.push({ source: "oembed", run: () => searchOEmbed(spec, fetchImpl) });
@@ -411,6 +520,9 @@
       } else if (result.source === "oembed") {
         used.oembed = true;
         videos = videos.concat(value.videos || []);
+      } else if (result.source === "piped") {
+        used.piped = true;
+        videos = videos.concat(value.videos || []);
       }
     });
 
@@ -427,6 +539,30 @@
       warnings.unshift(
         "Chưa có khóa YouTube nên video này lấy qua oEmbed: có tên và ảnh, chưa có giờ đăng. Thêm khóa để xem các video mới của kênh."
       );
+    }
+    if (used.piped && !ready.youtube) {
+      warnings.unshift("Chưa có khóa YouTube. Kết quả từ khóa lấy qua nguồn mở, xếp mới nhất trước. Thêm khóa YouTube Data API nếu muốn ổn định hơn.");
+    }
+
+    if (!videos.length && spec.kind === "keyword" && ready.youtube) {
+      const hard = failures.filter((failure) => {
+        const code = failure.error && failure.error.code;
+        return code === "INVALID_KEY" || code === "NOT_ENABLED";
+      });
+      if (!hard.length) {
+        try {
+          const open = await searchPiped(spec.kind === "keyword" ? spec.query : spec.raw, opts, fetchImpl);
+          if (open.videos && open.videos.length) {
+            used.piped = true;
+            videos = open.videos;
+            failures.forEach((failure) => {
+              warnings.push(prefix(failure.source, (failure.error && failure.error.message) || Logic.messages.upstream));
+            });
+            warnings.unshift("YouTube Data API không trả video. Đã chuyển sang nguồn mở, vẫn xếp mới nhất trước.");
+            failures.length = 0;
+          }
+        } catch (error) {}
+      }
     }
 
     if (!videos.length) {
@@ -457,17 +593,12 @@
   async function checkKeys(settings, fetchImpl) {
     const ready = Logic.readiness(settings);
     const net = fetchImpl || fetch;
-    const report = {};
-    if (ready.google) {
-      try {
-        await cseListSafe(ready, { q: "video", num: 1 }, net);
-        report.google = { ok: true, message: "Google Search dùng được." };
-      } catch (error) {
-        report.google = { ok: false, message: error.message || Logic.messages.upstream };
-      }
-    } else {
-      report.google = { ok: false, message: "Cần cả khóa API và mã cx." };
-    }
+    const report = {
+      google: {
+        ok: false,
+        message: "Custom Search không còn được dùng. Dự án Google mới bị từ chối API này, và không cần mã cx.",
+      },
+    };
     if (ready.youtube) {
       try {
         await ytGet("videos", ready.youtubeApiKey, { part: "snippet", id: "jNQXAC9IVRw" }, net);
@@ -476,7 +607,7 @@
         report.youtube = { ok: false, message: error.message || Logic.messages.upstream };
       }
     } else {
-      report.youtube = { ok: false, message: "Chưa có khóa YouTube." };
+      report.youtube = { ok: false, message: "Chưa có khóa YouTube. Từ khóa vẫn tìm được qua nguồn mở; trang web không cần khóa." };
     }
     return report;
   }
