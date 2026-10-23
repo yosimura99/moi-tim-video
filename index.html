@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mới — video mới nhất từ Google</title>
+  <meta name="description" content="Tìm video mới nhất theo từ khóa hoặc địa chỉ trang web. Nguồn chính là Google Search, bổ sung từ YouTube.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    (function () {
+      try {
+        var raw = localStorage.getItem("moi.settings");
+        var theme = raw ? JSON.parse(raw).theme : "dark";
+        document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+      } catch (e) {
+        document.documentElement.dataset.theme = "dark";
+      }
+    })();
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/" aria-label="Mới, về trang tìm kiếm">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#e23d12"/>
+        <path d="M13 10.5v11l9-5.5-9-5.5z" fill="#fff"/>
+      </svg>
+      <span>Mới</span>
+    </a>
+    <form id="searchForm" class="search-form" role="search" autocomplete="off">
+      <div class="search">
+        <label class="sr-only" for="q">Từ khóa hoặc địa chỉ trang web</label>
+        <input id="q" name="q" type="text" maxlength="500" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Từ khóa hoặc địa chỉ trang web" aria-label="Từ khóa hoặc địa chỉ trang web">
+        <button type="button" class="ghost" id="clearQuery" hidden>Xóa</button>
+        <button type="submit" class="go">Tìm</button>
+      </div>
+      <div id="suggest" class="suggest" hidden></div>
+    </form>
+    <div class="top-actions">
+      <button type="button" class="icon-btn" id="themeToggle" aria-label="Chuyển sang giao diện sáng">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" hidden aria-hidden="true">
+          <path d="M20 14.5A7.5 7.5 0 0 1 9.5 4 7 7 0 1 0 20 14.5z"/>
+        </svg>
+      </button>
+      <button type="button" class="icon-btn" id="openSettings" aria-label="Cài đặt">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M4 7h10M18 7h2M4 17h2M10 17h10"/>
+          <circle cx="16" cy="7" r="2.2"/>
+          <circle cx="8" cy="17" r="2.2"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+  <div id="status" class="sr-only" aria-live="polite"></div>
+  <main id="main" class="page"></main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="settings" aria-labelledby="settingsTitle">
+    <div class="dialog-body">
+      <h2 id="settingsTitle">Cài đặt khóa Google</h2>
+      <p class="lede">Google Search là nguồn chính cho cả từ khóa và địa chỉ trang web. YouTube Data API bổ sung video YouTube, thời lượng và giờ đăng. Khóa chỉ nằm trong trình duyệt này.</p>
+
+      <label class="field" for="googleApiKey">
+        <span>Khóa API Google</span>
+        <span class="secret">
+          <input id="googleApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+          <button type="button" class="ctrl" data-toggle-secret="googleApiKey">Hiện</button>
+        </span>
+        <small>Tạo trong Google Cloud Console. Nên bật Custom Search API và YouTube Data API v3 cho cùng một khóa.</small>
+      </label>
+
+      <label class="field" for="searchEngineId">
+        <span>Mã công cụ tìm kiếm (cx)</span>
+        <input id="searchEngineId" type="text" autocomplete="off" spellcheck="false" placeholder="Search engine ID">
+        <small>Lấy ở Programmable Search Engine. Phải bật Search the entire web thì mới tìm được khắp web.</small>
+      </label>
+
+      <label class="field check">
+        <input id="shareGoogleKey" type="checkbox" checked>
+        <span>Dùng khóa Google cho YouTube <small>Khóa ở trên phải được phép gọi YouTube Data API v3.</small></span>
+      </label>
+
+      <label class="field" id="youtubeField" for="youtubeApiKey">
+        <span>Khóa YouTube riêng</span>
+        <span class="secret">
+          <input id="youtubeApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Chỉ điền nếu không dùng chung khóa">
+          <button type="button" class="ctrl" data-toggle-secret="youtubeApiKey">Hiện</button>
+        </span>
+        <small>Bỏ chọn ô phía trên nếu bạn muốn một khóa chỉ dành cho YouTube.</small>
+      </label>
+
+      <div id="checkResult" class="check-log" aria-live="polite"></div>
+
+      <h3>Lấy khóa và mã cx</h3>
+      <ol class="steps">
+        <li>Mở <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> và tạo một dự án, hoặc chọn dự án có sẵn.</li>
+        <li>Vào <strong>APIs &amp; Services → Library</strong>. Bật <strong>Custom Search API</strong> và <strong>YouTube Data API v3</strong>. Đợi vài phút cho API có hiệu lực.</li>
+        <li>Vào <strong>APIs &amp; Services → Credentials → Create credentials → API key</strong>. Sao chép khóa.</li>
+        <li>Nên hạn chế khóa: <strong>Application restrictions → HTTP referrers</strong>. Thêm <code>http://localhost/*</code>, <code>http://127.0.0.1/*</code> và địa chỉ Pages, ví dụ <code>https://ten-ban.github.io/*</code>. Ở <strong>API restrictions</strong>, chỉ chọn Custom Search API và YouTube Data API v3.</li>
+        <li>Mở <a href="https://programmablesearchengine.google.com/controlpanel/create" target="_blank" rel="noopener noreferrer">Programmable Search Engine</a>. Khi được hỏi tìm ở đâu, chọn <strong>Search the entire web</strong>. Tạo xong, sao chép <strong>Search engine ID</strong> — đó là mã cx.</li>
+        <li>Dán khóa và cx vào form, bấm <strong>Kiểm tra khóa</strong>. Khi Google và YouTube đều báo dùng được, bấm <strong>Lưu</strong>.</li>
+      </ol>
+      <p class="callout">Mỗi lượt tìm có thể tốn 1–2 truy vấn Custom Search (mức miễn phí khoảng 100 lần/ngày) và một lần tìm YouTube (100 đơn vị; hạn mức mặc định khoảng 10.000 đơn vị/ngày). Tự làm mới cũng tốn hạn mức. Khóa không được đưa vào Git. Ai mở trang này đều phải tự dán khóa của họ.</p>
+      <p class="lede">Chưa có khóa? Một liên kết video YouTube (<code>watch</code>, <code>youtu.be</code>, <code>shorts</code>) vẫn hiện được tên và ảnh. Kênh, playlist và từ khóa cần khóa — YouTube không cho trang tĩnh đọc RSS.</p>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="text-btn" id="clearKeys">Xóa khóa đã lưu</button>
+      <button type="button" class="ctrl" id="checkKeys">Kiểm tra khóa</button>
+      <button type="button" class="primary" id="saveSettings">Lưu</button>
+      <button type="button" class="ctrl" id="closeSettings">Đóng</button>
+    </div>
+  </dialog>
+  <noscript><p class="page">Mới cần JavaScript để hỏi Google và hiện video.</p></noscript>
+  <script src="js/logic.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
