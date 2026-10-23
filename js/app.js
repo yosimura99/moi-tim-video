@@ -2,7 +2,7 @@
   var DEFAULTS = {
     googleApiKey: "",
     searchEngineId: "",
-    youtubeApiKey: "",
+    youtubeApiKey: "AIzaSyCMxgl4XHlrIqUT6gw27vRB1roKiiTjGZk",
     shareGoogleKey: true,
     theme: "dark",
     autoRefreshSec: 0,
