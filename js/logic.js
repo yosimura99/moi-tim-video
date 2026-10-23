@@ -27,7 +27,7 @@
       "Khóa YouTube bị từ chối. Kiểm tra hạn chế HTTP referrer và bật YouTube Data API v3 cho khóa này.",
     badRequest: "YouTube từ chối yêu cầu. Kiểm tra lại từ khóa hoặc địa chỉ.",
     notEnabledGoogle:
-      "Custom Search API không dùng được với dự án Google mới. Mới không cần mã cx.",
+      "Custom Search API không dùng được với dự án Google mới. Pỏn của Khang không cần mã cx.",
     notEnabledYoutube:
       "Chưa bật YouTube Data API v3. Vào APIs & Services → Library, tìm “YouTube Data API v3” và bấm Enable.",
     noChannel: "Không tìm thấy kênh YouTube này. Kiểm tra lại địa chỉ.",

@@ -1,9 +1,9 @@
-# Mới
+# Pỏn của Khang
 
 Trang tĩnh để tìm **video mới nhất**. Gõ một từ khóa hoặc dán địa chỉ trang web.
 
 - **Từ khóa** lấy video YouTube, xếp mới đăng lên trước. Có khóa [YouTube Data API v3](https://developers.google.com/youtube/v3) thì dùng API (`order=date`). Chưa có khóa thì dùng nguồn mở (Piped) — vẫn là video YouTube, phát trong trang.
-- **Địa chỉ trang** không cần khóa và không cần mã `cx`. Mới đọc trang (RSS, sitemap không bắt buộc, thẻ video, iframe, liên kết YouTube/Vimeo/Dailymotion/TikTok/Facebook). Trình duyệt bị CORS chặn thì đọc qua [Jina Reader](https://r.jina.ai/). Video có ngày thì xếp mới nhất trước.
+- **Địa chỉ trang** không cần khóa và không cần mã `cx`. Pỏn của Khang đọc trang (RSS, sitemap không bắt buộc, thẻ video, iframe, liên kết YouTube/Vimeo/Dailymotion/TikTok/Facebook). Trình duyệt bị CORS chặn thì đọc qua [Jina Reader](https://r.jina.ai/). Video có ngày thì xếp mới nhất trước.
 
 File `.mp4` phát bằng thẻ video. Luồng HLS (như VnExpress) phát bằng hls.js; CDN của VnExpress chỉ cho phép origin của báo, nên đoạn phim đi qua một proxy CORS và gắn lại origin đó. YouTube, Vimeo, Dailymotion, TikTok và Facebook phát trong khung nhúng khi trang nguồn cho phép.
 

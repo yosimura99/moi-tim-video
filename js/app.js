@@ -413,14 +413,14 @@
   function renderLoading() {
     main.replaceChildren(h("p", { class: "loading-note" }, "Đang tìm video mới…"), skeletonGrid());
     setStatus("Đang tìm video mới…");
-    document.title = "Đang tìm · Mới";
+    document.title = "Đang tìm · Pỏn của Khang";
   }
 
   function renderIdle() {
     var ready = MoiLogic.readiness(settings);
     var intro = h("section", { class: "intro" },
       h("h1", {}, "Video mới nhất."),
-      h("p", {}, "Gõ một từ khóa hoặc dán địa chỉ trang web. Từ khóa lấy video YouTube mới đăng. Địa chỉ trang thì Mới đọc RSS và video nhúng, rồi xếp video mới lên trên."),
+      h("p", {}, "Gõ một từ khóa hoặc dán địa chỉ trang web. Từ khóa lấy video YouTube mới đăng. Địa chỉ trang thì Pỏn của Khang đọc RSS và video nhúng, rồi xếp video mới lên trên."),
       h("p", { class: "hint" }, "Nhấn / để nhảy tới ô tìm.")
     );
     var parts = [intro];
@@ -443,7 +443,7 @@
     }
     parts.push(box);
     main.replaceChildren.apply(main, parts);
-    document.title = "Mới — video mới nhất";
+    document.title = "Pỏn của Khang — video mới nhất";
     setStatus("");
   }
 
@@ -462,7 +462,7 @@
     parts = parts.concat(banners());
     parts.push(box);
     main.replaceChildren.apply(main, parts);
-    document.title = "Không tìm được · Mới";
+    document.title = "Không tìm được · Pỏn của Khang";
     setStatus(state.error ? state.error.message : "");
   }
 
@@ -472,7 +472,7 @@
     var parts = [toolbar()].concat(banners(), [grid]);
     if (hasNext(state.page)) parts.push(h("button", { type: "button", class: "more", "data-action": "more" }, "Xem thêm"));
     main.replaceChildren.apply(main, parts);
-    document.title = state.query + " · Mới";
+    document.title = state.query + " · Pỏn của Khang";
     setStatus(state.videos.length + " video cho " + state.query);
   }
 
@@ -562,7 +562,7 @@
         ),
         state.videos.length ? grid : null
       );
-      document.title = "Không thấy video · Mới";
+      document.title = "Không thấy video · Pỏn của Khang";
       return;
     }
     var others = state.videos.filter(function (item) { return item.id !== video.id; });
@@ -589,7 +589,7 @@
       )
     );
     main.replaceChildren.apply(main, banners().concat([layout]));
-    document.title = video.title + " · Mới";
+    document.title = video.title + " · Pỏn của Khang";
     setStatus(video.title);
     window.scrollTo(0, 0);
     requestAnimationFrame(function () {

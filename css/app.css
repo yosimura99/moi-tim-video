@@ -83,7 +83,9 @@ img { max-width: 100%; }
   font-size: 22px;
   letter-spacing: -0.04em;
 }
-.brand svg { width: 32px; height: 32px; display: block; }
+.brand svg { width: 44px; height: 32px; display: block; }
+.brand-name { display: inline-flex; align-items: flex-start; gap: 4px; font-family: 'Arial Black', 'Helvetica Neue', Arial, sans-serif; font-weight: 900; font-size: 22px; letter-spacing: -0.05em; }
+.brand-name small { font-size: 10px; font-weight: 600; letter-spacing: 0; opacity: .7; margin-top: 2px; font-family: inherit; }
 .search-form { position: relative; flex: 1 1 240px; min-width: 0; }
 .search {
   display: flex;
